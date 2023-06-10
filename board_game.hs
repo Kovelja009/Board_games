@@ -45,7 +45,7 @@ foldRose f acc (Rose val xs) = f (foldl (\acc a -> foldRose f acc a) acc xs) val
 -------- State Representation --------
 
 -------- Board game --------
-data Board a = Board {turn :: Int, board :: [[a]], dim :: Int}
+data Board a = Board {turn :: Int, board :: [[a]], dim :: Int} 
 
 -------- Move --------
 data Move = Move {player :: Int, place :: (Int, Int)}
@@ -76,25 +76,28 @@ instance Monad (GameStateOp s) where
 ------------
 -------- GameStateOpHistory --------
 
-newtype GameStateOpHistory s a = GameStateOpHistory { runGameStateOpHistory ::s-> (a, s) }
+newtype GameStateOpHistory s a = GameStateOpHistory { runGameStateOpH ::s-> (a, [s]) }
 
-instance Functor (GameStateOpHistory s) where
-    fmap f (GameStateOpHistory h) = GameStateOpHistory (\board -> let (a, new_board) = h board in (f a, new_board))
+instance (Eq s) => Functor (GameStateOpHistory s) where
+    fmap f (GameStateOpHistory h) = GameStateOpHistory (\board -> let (a, updated_list) = h board in (f a, updated_list))
 
-
-instance Applicative (GameStateOpHistory s) where
-    pure x = GameStateOpHistory $ \s -> (x,s)
+instance (Eq s) =>Applicative (GameStateOpHistory s) where
+    pure x = GameStateOpHistory $ \board -> (x,[board])
     (GameStateOpHistory f) <*> (GameStateOpHistory sa) =
-     GameStateOpHistory (\board -> let (fn,new_board) = f board
-                                       (a, s2) = sa new_board
-                                    in (fn a, s2))
+     GameStateOpHistory (\board -> let  (fn,updated_list) = f board
+                                        (cur:prev) = updated_list
+                                        (a, s2) = sa cur
+                                    in  (fn a, s2 ++ updated_list))
 
-instance Monad (GameStateOpHistory s) where
+instance (Eq s) => Monad (GameStateOpHistory s) where
     return = pure
     GameStateOpHistory h >>= f = GameStateOpHistory $ \board -> let 
-                                                    (is_done, new_board) = h board
-                                                    (GameStateOpHistory g) = f is_done
-                                                    in g new_board
+                                                                    (a, updated_list) = h board
+                                                                    (GameStateOpHistory g) = f a
+                                                                    (a1, updated_list1) = g (head updated_list)
+                                                                    final_list = if (head updated_list1) == (head updated_list) then updated_list else updated_list1 ++ updated_list
+                                                                    -- final_list = updated_list1 ++ updated_list
+                                                                in (a1, final_list)
 
 ------------------------------------------------------------
 -- examples of board
@@ -108,6 +111,8 @@ ad = Board  1 [['X', 'O', 'X'],['X', 'O', 'O'], ['O', 'X', ' ']] 3
 ad2 = Board  1 [['X', 'O', ' '],['X', 'O', 'O'], ['O', 'X', 'X']] 3
 child = Board  0 [['O', 'O', 'X'],['O', 'X', 'X'], [' ', 'X', ' ']] 3
 child2 = Board  1 [['O', 'X', 'X'],['O', 'X', 'O'], [' ', ' ', ' ']] 3 -- good for demonstrating that the moves take into account the state of the board
+comp = Board  1 [['X', ' ', 'X'],[' ', 'O', ' '], ['O', ' ', ' ']] 3
+comp2 = Board  1 [['X', ' ', ' '],['O', ' ', ' '], [' ', ' ', ' ']] 3
 
 
 -- O is 0, X is 1
@@ -127,6 +132,10 @@ show_pl 1 = "X"
 
 instance (Show a) => Show (Board a) where
     show (Board pl board dim) = " Next move player: "++ (show_pl pl) ++ "\n" ++ show_board board
+
+-------- eq board --------
+instance (Eq a) => Eq (Board a) where
+    (Board pl1 board1 dim1) == (Board pl2 board2 dim2) = (board1 == board2)
 ---------------------------
 -------- getting valid moves --------
 get_row_valid :: Int -> [Char] -> [(Int, Int)]
@@ -198,14 +207,17 @@ apply_move (x1, y1) = GameStateOp (\board -> let
                                             if (elem coord (get_valid_moves board) && (not has_done)) then (is_finished new_board, new_board) else (has_done , board))
 
 
-apply_moveh :: (Int, Int) -> GameStateOpHistory [Board Char] Bool
-apply_moveh (x1, y1) = GameStateOpHistory (\boards -> let
-                                                            current:rest = boards
-                                                            new_board = make_move coord current
+apply_moveh :: (Int, Int) -> GameStateOpHistory (Board Char) Bool
+apply_moveh (x1, y1) = GameStateOpHistory (\board -> let
+                                                            new_board = make_move coord board
                                                             coord = (x1+1, y1+1)
-                                                            has_done = is_finished current
+                                                            has_done = is_finished board
                                                         in 
-                                                            if ((not has_done) && (elem coord (get_valid_moves current))) then (is_finished new_board, new_board:boards) else (has_done, boards))
+                                                            if ((not has_done) && (elem coord (get_valid_moves board))) then (is_finished new_board, [new_board]) else (has_done, [board]))
+
+
+initialize :: GameStateOpHistory (Board Char) Bool
+initialize = (GameStateOpHistory (\board -> (is_finished board, [board]))) 
 
 -- runGameStateOp apply_moves initial
 apply_moves :: GameStateOp (Board Char) Bool
@@ -218,9 +230,10 @@ apply_moves = do
     apply_move (1,1)
 
 
--- runGameStateOpHistory apply_moves2 [initial]
-apply_moves2 :: GameStateOpHistory [Board Char] Bool
+-- runGameStateOpH apply_moves2 initial
+apply_moves2 :: GameStateOpHistory (Board Char) Bool
 apply_moves2 = do
+    initialize 
     apply_moveh (0,1)
     apply_moveh (1,0)
     apply_moveh (0,0)
@@ -232,7 +245,7 @@ apply_moves2 = do
 
 -- because in file we don't know exactly how many moves there are
 list_moves = [apply_move (0,1), apply_move (1,0), apply_move (0,0)]
-list_movesh = [apply_moveh(0,1), apply_moveh (1,0), apply_moveh (0,0)]
+-- list_movesh = [apply_moveh(0,1), apply_moveh (1,0), apply_moveh (0,0)]
 
 -------- Simulation that works with list of moves --------
 -- run_simulation list_moves initial_board <using foldl in the background to apply every move
@@ -243,9 +256,9 @@ run_simulation :: [GameStateOp (Board Char) Bool] -> Board Char -> (Bool, Board 
 run_simulation [] board = (is_finished board, board)
 run_simulation (x:xs) board = runGameStateOp (foldl (\acc elem -> acc >> elem) x xs) board
 
-run_simulation_h :: [GameStateOpHistory [Board Char] Bool] -> Board Char -> (Bool, [Board Char]) 
-run_simulation_h [] board = (is_finished board, [board])
-run_simulation_h (x:xs) board = runGameStateOpHistory (foldl (\acc elem -> acc >> elem) x xs) [board]
+-- run_simulation_h :: [GameStateOpHistory [Board Char] Bool] -> Board Char -> (Bool, [Board Char]) 
+-- run_simulation_h [] board = (is_finished board, [board])
+-- run_simulation_h (x:xs) board = runGameStateOpH (foldl (\acc elem -> acc >> elem) x xs) [board]
 
 ---------------------------
 
