@@ -105,7 +105,10 @@ up = Board  1 [['X', 'O', 'O'],['X', 'X', ' '], ['X', ' ', 'O']] 3
 dig = Board  0 [['X', 'O', ' '],['O', 'X', ' '], [' ', ' ', 'X']] 3
 dig2 = Board  0 [['O', 'O', 'X'],['O', 'X', ' '], ['X', ' ', 'X']] 3
 ad = Board  1 [['X', 'O', 'X'],['X', 'O', 'O'], ['O', 'X', ' ']] 3
-ad2 = Board  0 [['X', ' ', ' '],['X', 'O', 'O'], ['O', 'X', 'X']] 3
+ad2 = Board  1 [['X', 'O', ' '],['X', 'O', 'O'], ['O', 'X', 'X']] 3
+child = Board  0 [['O', 'O', 'X'],['O', 'X', 'X'], [' ', 'X', ' ']] 3
+child2 = Board  1 [['O', 'X', 'X'],['O', 'X', 'O'], [' ', ' ', ' ']] 3 -- good for demonstrating that the moves take into account the state of the board
+
 
 -- O is 0, X is 1
 
@@ -169,9 +172,13 @@ diagonal' b = diagonal (map reverse b)
 ---------------------------
 -------- Rose tree of moves --------
 
+get_moves_with_finished_info :: Board Char -> [(Int, Int)]
+get_moves_with_finished_info board = case is_finished board of
+                                        True -> []
+                                        False -> get_valid_moves board 
 -- get all possible moves
 get_all_moves :: Board Char -> Rose (Board Char)
-get_all_moves (Board p b dim) = Rose (Board p b dim) (map (\coord -> get_all_moves (make_move coord (Board p b dim))) (get_valid_moves (Board p b dim))) 
+get_all_moves (Board p b dim) = Rose (Board p b dim) (map (\coord -> get_all_moves (make_move coord (Board p b dim))) (get_moves_with_finished_info (Board p b dim))) 
 
 game_tree = get_all_moves initial
 -- elemsOnDepth (get_all_moves initial) 1
