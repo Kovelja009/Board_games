@@ -2,6 +2,7 @@ import Data.List
 import Control.Monad
 import System.IO
 import Text.Parsec
+import System.Environment
 
 -------- Rose tree --------
 
@@ -244,7 +245,7 @@ apply_moves2 = do
 -------- Making a list of partialy applied moves --------
 
 -- because in file we don't know exactly how many moves there are
-list_moves = [apply_move (0,1), apply_move (1,0), apply_move (0,0)]
+-- list_moves = [apply_move (0,1), apply_move (1,0), apply_move (0,0)]
 -- list_movesh = [apply_moveh(0,1), apply_moveh (1,0), apply_moveh (0,0)]
 
 -------- Simulation that works with list of moves --------
@@ -256,11 +257,11 @@ run_simulation :: [GameStateOp (Board Char) Bool] -> Board Char -> (Bool, Board 
 run_simulation [] board = (is_finished board, board)
 run_simulation (x:xs) board = runGameStateOp (foldl (\acc elem -> acc >> elem) x xs) board
 
--- run_simulation_h :: [GameStateOpHistory [Board Char] Bool] -> Board Char -> (Bool, [Board Char]) 
--- run_simulation_h [] board = (is_finished board, [board])
--- run_simulation_h (x:xs) board = runGameStateOpH (foldl (\acc elem -> acc >> elem) x xs) [board]
-
+run_simulation_h :: [GameStateOpHistory (Board Char) Bool] -> Board Char -> (Bool, [Board Char]) 
+run_simulation_h [] board = (is_finished board, [board])
+run_simulation_h (lst) board = runGameStateOpH (foldl (\acc elem -> acc >> elem) initialize lst) board
 ---------------------------
+
 
 
 -- load a game from a file line by line
@@ -273,25 +274,77 @@ run_simulation (x:xs) board = runGameStateOp (foldl (\acc elem -> acc >> elem) x
 -- O (1,2)
 -- X (0,2)
 
+-- load a row from the file
+
+move :: Parsec String (Board Char) Char
+move = do
+            char ' '
+            elem <- oneOf "XO "
+            char ' '
+            return elem
 
 
+load_row :: Parsec String (Board Char) String
+load_row = do
+            char '|'
+            elems <- sepEndBy (move) (char '|')
+            char '\n'
+            return elems
 
--- get_player :: [String] -> Int
--- get_player moves = let
---                         first_move = head moves
---                     in
---                         if (head first_move) == 'X' then 1 else 0
+load_board :: Parsec String (Board Char) ()
+load_board = do 
+                row1 <- load_row
+                row2 <- load_row
+                row3 <- load_row
+                setState (Board 0 [row1, row2, row3] 3)
 
--- get_board :: [String] -> [[Char]]
+-- parse one move from the file
+parse_move :: Parsec String (Board Char) (Char, (Int, Int))
+parse_move = do spaces
+                player <- oneOf "XO"
+                spaces
+                char '('
+                x <- digit
+                char ','
+                y <- digit
+                char ')'
+                return (player, (read [x], read [y]))
 
 
--- make_board :: [String] -> [String] -> Board Char
--- make_board board moves = Board (get_player moves) (get_board board)
+get_player :: [(Char, (Int, Int))] -> Int
+get_player moves = let
+                        (p, coord) = head moves
+                    in
+                        if p == 'X' then 1 else 0
 
--- main = do  
---     contents <- readFile "game.txt"
---     let 
---         board = [line | line <- (lines contents), elem '|' line]
---         moves = [line | line <- (lines contents), not (elem '|' line)]
---         initial_board = make_board board moves
---     print initial_board
+is_ordered_valid :: [(Char, (Int, Int))] -> Bool
+is_ordered_valid [] = True
+is_ordered_valid lst = let (res, prev) = (foldl (\(global, prev) (p, coord) -> (global && (prev /= p), p)) (True, ' ') lst) in res
+
+-- load moves from the file
+load_moves :: Parsec String (Board Char) [(Int, Int)]
+load_moves = do 
+                moves <- many parse_move
+                case (is_ordered_valid moves) of False -> do fail "Invalid moves"
+                                                 True -> do
+                                                            modifyState (\(Board p t d) -> Board (get_player moves) t d)
+                                                            return (map (\(player, coord) -> coord) moves)
+
+play_game :: Parsec String (Board Char) (Board Char, [(Int,Int)])
+play_game = do
+                load_board
+                moves <- load_moves
+                board <- getState
+                return (board, moves)
+
+main :: IO ()
+main = do  
+            putStrLn "Enter file name:"
+            file_name <- getLine
+            putStrLn "For history simulation enter h, else enter anything else:"
+            history <- getLine
+            contents <- readFile file_name
+            if history == "h" then case runParser play_game initial file_name contents of Right (board, moves) -> print (run_simulation_h (map (\move -> apply_moveh move) moves) board)
+                                                                                          Left err -> print err 
+                              else case runParser play_game initial file_name contents of Right (board, moves) -> print (run_simulation (map (\move -> apply_move move) moves) board)
+                                                                                          Left err -> print err
