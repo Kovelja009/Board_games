@@ -97,7 +97,6 @@ instance (Eq s) => Monad (GameStateOpHistory s) where
                                                                     (GameStateOpHistory g) = f a
                                                                     (a1, updated_list1) = g (head updated_list)
                                                                     final_list = if (head updated_list1) == (head updated_list) then updated_list else updated_list1 ++ updated_list
-                                                                    -- final_list = updated_list1 ++ updated_list
                                                                 in (a1, final_list)
 
 ------------------------------------------------------------
@@ -136,7 +135,7 @@ instance (Show a) => Show (Board a) where
 
 -------- eq board --------
 instance (Eq a) => Eq (Board a) where
-    (Board pl1 board1 dim1) == (Board pl2 board2 dim2) = (board1 == board2)
+    (Board pl1 board1 dim1) == (Board pl2 board2 dim2) = (board1 == board2) && (pl1 == pl2)
 ---------------------------
 -------- getting valid moves --------
 get_row_valid :: Int -> [Char] -> [(Int, Int)]
@@ -274,7 +273,6 @@ run_simulation_h (lst) board = runGameStateOpH (foldl (\acc elem -> acc >> elem)
 -- O (1,2)
 -- X (0,2)
 
--- load a row from the file
 
 move :: Parsec String (Board Char) Char
 move = do
@@ -298,7 +296,6 @@ load_board = do
                 row3 <- load_row
                 setState (Board 0 [row1, row2, row3] 3)
 
--- parse one move from the file
 parse_move :: Parsec String (Board Char) (Char, (Int, Int))
 parse_move = do spaces
                 player <- oneOf "XO"
@@ -321,11 +318,10 @@ is_ordered_valid :: [(Char, (Int, Int))] -> Bool
 is_ordered_valid [] = True
 is_ordered_valid lst = let (res, prev) = (foldl (\(global, prev) (p, coord) -> (global && (prev /= p), p)) (True, ' ') lst) in res
 
--- load moves from the file
 load_moves :: Parsec String (Board Char) [(Int, Int)]
 load_moves = do 
                 moves <- many parse_move
-                case (is_ordered_valid moves) of False -> do fail "Invalid moves"
+                case (is_ordered_valid moves) of False -> do fail "Invalid order of moves!"
                                                  True -> do
                                                             modifyState (\(Board p t d) -> Board (get_player moves) t d)
                                                             return (map (\(player, coord) -> coord) moves)
